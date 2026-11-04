@@ -1,0 +1,249 @@
+{
+  "audit_dates": [
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05"
+  ],
+  "timezone": "Asia/Calcutta",
+  "environment": {
+    "os": "Windows",
+    "python": "3.12.10",
+    "node": "25.8.0",
+    "npm": "11.11.0"
+  },
+  "scope": "Local single-process code audit and offline verification; no hosted provider evaluation or deployment",
+  "hypotheses": "ENGINEERING_AUDIT.md#prioritization-and-hypothesis-inventory",
+  "python_suite": {
+    "tests": 229,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 8.004,
+    "command": "python -m pytest tests -q --basetemp=.audit_tmp/final_graph_atomic --junitxml=.audit_tmp/pytest-final.xml",
+    "providers": "hash / lexical / none",
+    "original_test_count": 128,
+    "added_cases": 101
+  },
+  "frontend_tests": {
+    "tests": 18,
+    "passed": 18,
+    "failed": 0,
+    "command": "npm test",
+    "kinds": [
+      "API contracts",
+      "React server rendering",
+      "component callbacks with controlled hooks"
+    ],
+    "browser_tested": false
+  },
+  "typecheck": {
+    "status": "passed",
+    "command": "npm run typecheck"
+  },
+  "production_build": {
+    "status": "passed",
+    "command": "npm run build",
+    "next": "16.4.4",
+    "static_pages": 8,
+    "routes": [
+      "/",
+      "/_not-found",
+      "/benchmark",
+      "/chat",
+      "/graph",
+      "/quiz"
+    ],
+    "environment_note": "Permitted font-network access required for initial cold build"
+  },
+  "real_process_smoke": {
+    "status": "passed",
+    "command": "python -m scripts.smoke_offline",
+    "checks": [
+      "Uvicorn startup on temporary loopback port",
+      "health",
+      "quiz",
+      "evaluation not-measured status"
+    ],
+    "providers": "disabled",
+    "temporary_state_cleaned": true
+  },
+  "python_fatal_lint": {
+    "status": "passed",
+    "command": "python -m ruff check --isolated --select E9,F63,F7,F82 src backend/app scripts tests"
+  },
+  "frontend_lint": {
+    "status": "failed",
+    "errors": 21,
+    "warnings": 34,
+    "command": "npm run lint"
+  },
+  "dependencies": {
+    "before": {
+      "critical": 2,
+      "high": 3,
+      "moderate": 18
+    },
+    "after": {
+      "info": 0,
+      "low": 0,
+      "moderate": 16,
+      "high": 0,
+      "critical": 0,
+      "total": 16
+    },
+    "all_remaining_nodes_dev_only": true,
+    "python_advisory_scan": "not_completed",
+    "pip_check": "Existing unrelated Streamlit/pyarrow version conflict; shared environment unchanged"
+  },
+  "failure_baselines": [
+    {
+      "area": "learning and simulation",
+      "failed_before": 8,
+      "passed_after": 8
+    },
+    {
+      "area": "initial unified service cases",
+      "failed_before": 8,
+      "passed_before": 1,
+      "note": "Multipart absolute Windows path case refined after observing safe basename normalization"
+    },
+    {
+      "area": "persistence failure injection",
+      "failed_before": 2,
+      "passed_after": 2
+    },
+    {
+      "area": "image integration",
+      "failed_before": 3,
+      "passed_after": 3
+    },
+    {
+      "area": "transcription import lifecycle",
+      "failed_before": 4,
+      "passed_after": 4
+    },
+    {
+      "area": "rational power and malformed raw Gemini responses",
+      "failed_before": 12,
+      "passed_before": 2,
+      "passed_after": 14
+    },
+    {
+      "area": "missing graph evidence, unknown mastery, unsupported citation score",
+      "failed_before": 3,
+      "passed_after": 3
+    },
+    {
+      "area": "upload graph isolation and replacement evidence",
+      "failed_before": 3,
+      "passed_after": 3
+    }
+  ],
+  "grounding_evaluation": {
+    "backend": "hash:512|lexical",
+    "results": [
+      {
+        "mode": "extractive",
+        "n_in_scope": 20,
+        "n_off_topic": 10,
+        "n_near_miss": 4,
+        "retrieval_hit@1": 0.95,
+        "retrieval_hit@3": 1.0,
+        "retrieval_precision@3_strict": 0.47,
+        "in_scope_answered": "19/20",
+        "citation_precision": 0.82,
+        "answers_with_a_correct_citation": 1.0,
+        "off_topic_refusal_rate": 1.0,
+        "near_miss_not_confidently_grounded": "4/4"
+      }
+    ]
+  },
+  "grounding_interpretation": "Matches the stored repository development baseline; not a fresh unchanged-code comparison or demonstrated retrieval improvement",
+  "simulation": {
+    "sessions": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "random_baseline": [
+      0.32,
+      0.33899999999999997,
+      0.358,
+      0.377,
+      0.395
+    ],
+    "adaptive_tutor": [
+      0.32,
+      0.33899999999999997,
+      0.359,
+      0.377,
+      0.39399999999999996
+    ],
+    "learning_curves": [
+      {
+        "session": "Session 1",
+        "random": 32.0,
+        "adaptive": 32.0
+      },
+      {
+        "session": "Session 2",
+        "random": 33.9,
+        "adaptive": 33.9
+      },
+      {
+        "session": "Session 3",
+        "random": 35.8,
+        "adaptive": 35.9
+      },
+      {
+        "session": "Session 4",
+        "random": 37.7,
+        "adaptive": 37.7
+      },
+      {
+        "session": "Session 5",
+        "random": 39.5,
+        "adaptive": 39.4
+      }
+    ],
+    "net_gain_percentage": "-0.1%",
+    "final_random": "39.5%",
+    "final_adaptive": "39.4%",
+    "sample_size": "30 simulated students across 8 course concepts",
+    "p_value": null,
+    "ragas_metrics": null,
+    "evaluation_kind": "simulation",
+    "statistics_status": "not_measured",
+    "ragas_status": "not_measured",
+    "question_counts": {
+      "random": 600,
+      "adaptive": 600
+    },
+    "seed": 42
+  },
+  "simulation_interpretation": "Adaptive 39.4% versus random 39.5%, 600 questions per arm. No demonstrated adaptive advantage; no significance test or real learner study.",
+  "chunking": {
+    "workload": "1000 1200-character documents, 7 repeats",
+    "before_chunks_per_document": 2,
+    "after_chunks_per_document": 1,
+    "before_indexed_characters": 1400,
+    "after_indexed_characters": 1200,
+    "before_median_seconds": 0.0010612000000946864,
+    "after_median_seconds": 0.0008161999999174441,
+    "timing_ranges_overlap": true,
+    "interpretation": "Redundant chunk reduction established. General latency benefit inconclusive."
+  },
+  "remaining_limits": [
+    "No authenticated ownership/tenant isolation",
+    "No cross-file crash transaction or multiworker consistency guarantee",
+    "Curated assessment bank independent of uploaded curriculum",
+    "No media process/CPU/decompression budgets",
+    "Remaining frontend lint failures and moderate dev dependency findings",
+    "No browser-driven end-to-end verification",
+    "No real model, multimodal quality, RAGAS or educational effectiveness measurement",
+    "Parser source-ID and normalized document-concept-ID collisions; requires source identity and migration design"
+  ],
+  "last_review": "Independent narrow review by a delegated reviewer found no new P0/P1 issue in the upload graph merge; retained P2 document-ID collision recorded in the report."
+}
