@@ -74,6 +74,31 @@ function textOf(tree) {
   return textOf(tree.props?.children);
 }
 const session = {id: "s1", title: "Saved chat", updated_at: new Date().toISOString()};
+
+test("a missed source term shows its quote and becomes the next practice round", async () => {
+  const card = {item_id: "abc", prompt: "_____ equals mass times velocity.", location: "p. 1"};
+  const h = harness("../components/SourcePractice.tsx", "SourcePractice", {
+    listPracticeSources: async () => ({sources: ["notes.md"]}),
+    loadRecallCards: async () => ({cards: [card]}),
+    checkRecall: async (source, item, answer) => {
+      assert.deepEqual([source, item, answer], ["notes.md", "abc", "force"]);
+      return {matches: false, term: "Momentum", citation: {source_id: source, label: "p. 1", excerpt: "Momentum equals mass times velocity."}};
+    },
+  });
+  h.render(); await h.flush();
+  nodes(h.render()).find(node => node.props?.id === "recall-term").props.onChange({target: {value: "force"}});
+  await nodes(h.render()).find(node => node.type === "form").props.onSubmit({preventDefault() {}});
+  assert.match(textOf(h.render()), /Momentum equals mass times velocity/);
+  const oldFrame = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = callback => callback();
+  try {
+    nodes(h.render()).find(node => node.type === "button" && textOf(node).includes("Finish round")).props.onClick();
+  } finally { if (oldFrame) globalThis.requestAnimationFrame = oldFrame; else delete globalThis.requestAnimationFrame; }
+  const finished = h.render();
+  assert.match(textOf(finished).replace(/\s+/g, " "), /0 of 1 source terms recalled/);
+  nodes(finished).find(node => node.type === "button" && textOf(node).includes("Practice missed terms")).props.onClick();
+  assert.match(textOf(h.render()), /Which term completes/);
+});
 const sidebarProps = {currentSessionId: "s1", isCollapsed: false, onSessionSelect() {}, onNewChat() {}};
 
 test("failed chat-history load ends loading and offers a retry", async () => {

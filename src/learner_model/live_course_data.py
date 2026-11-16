@@ -630,7 +630,7 @@ class AblationSimulator:
         self.concepts = concepts
         self.pool = pool
 
-    def run_benchmark(self, num_students: int = 30, sessions: int = 5, quiz_size: int = 4) -> Dict[str, Any]:
+    def run_benchmark(self, num_students: int = 30, sessions: int = 5, quiz_size: int = 4, seed: int = 42) -> Dict[str, Any]:
         if not (1 <= num_students <= 500 and 1 <= sessions <= 50 and 1 <= quiz_size <= 25):
             raise ValueError("Require 1..500 students, 1..50 sessions and 1..25 questions.")
         if not self.concepts or not self.pool:
@@ -643,14 +643,17 @@ class AblationSimulator:
         session_random_mastery = [0.0] * sessions
         session_adaptive_mastery = [0.0] * sessions
         question_counts = {"random": 0, "adaptive": 0}
+        paired_differences = []
+        if type(seed) is not int or not 0 <= seed <= 2**31 - 1:
+            raise ValueError("seed must be an integer in [0, 2**31 - 1].")
 
         for s_idx in range(num_students):
-            rng = random.Random(42 + s_idx)
+            rng = random.Random(seed + s_idx)
             init_ability = {cid: rng.uniform(0.15, 0.45) for cid in c_ids}
-            selection_rng = random.Random(10000 + s_idx)
+            selection_rng = random.Random(10000 + seed - 42 + s_idx)
             # Paired response streams and the SAME learning rule isolate selection.
-            random_response_rng = random.Random(20000 + s_idx)
-            adaptive_response_rng = random.Random(20000 + s_idx)
+            random_response_rng = random.Random(20000 + seed - 42 + s_idx)
+            adaptive_response_rng = random.Random(20000 + seed - 42 + s_idx)
 
             # 1. Random condition
             rand_student = dict(init_ability)
@@ -686,6 +689,15 @@ class AblationSimulator:
                         adapt_student[cid] += 0.04 * (1.0 - adapt_student[cid])
                 session_adaptive_mastery[sess] += mean(adapt_student.values())
 
+            paired_differences.append(100 * (mean(adapt_student.values()) - mean(rand_student.values())))
+
+        # Resample paired students, not individual questions. This quantifies only
+        # Monte Carlo variability under this synthetic population and learning rule.
+        bootstrap_rng = random.Random(30000 + seed)
+        bootstrap = sorted(mean(bootstrap_rng.choices(paired_differences, k=num_students))
+                           for _ in range(2000)) if num_students > 1 else []
+        interval = [round(bootstrap[49], 4), round(bootstrap[1949], 4)] if bootstrap else None
+
         # Average across students
         rand_curve = [round((val / num_students) * 100, 1) for val in session_random_mastery]
         adapt_curve = [round((val / num_students) * 100, 1) for val in session_adaptive_mastery]
@@ -713,8 +725,18 @@ class AblationSimulator:
             "p_value": None,
             "ragas_metrics": None,
             "evaluation_kind": "simulation",
-            "statistics_status": "not_measured",
+            "statistics_status": "paired_bootstrap" if interval else "insufficient_students",
+            "paired_difference_pp": round(mean(paired_differences), 4),
+            "paired_difference_ci95_pp": interval,
+            "bootstrap_replicates": len(bootstrap),
+            "equal_question_counts": question_counts["random"] == question_counts["adaptive"],
+            "requested_questions_per_policy": num_students * sessions * quiz_size,
+            "assumptions": ["Synthetic proficiency starts uniformly in [0.15, 0.45].",
+                            "Response probability is 0.2 + 0.7 * proficiency; difficulty is not modeled.",
+                            "Both policies learn 0.08*(1-p) on correct, 0.04*(1-p) on incorrect.",
+                            "No forgetting; unseen ready-pool exhaustion can reduce adaptive exposure.",
+                            "Intervals describe this simulation only, not real learning effectiveness."],
             "ragas_status": "not_measured",
             "question_counts": question_counts,
-            "seed": 42,
+            "seed": seed,
         }

@@ -5,12 +5,12 @@ This is the "verifier" half of the assessment pipeline. It takes a question
 that Groq generated and asks Gemini to answer it -- BLIND, i.e. Gemini never
 sees Groq's answer. Then we compare the two answers:
 
-    agree   -> question.verified = True   (safe to show the student)
+    agree   -> question.verified = True   (agreement signal, not a correctness guarantee)
     disagree-> question.verified = False  (throw it away)
 
-Because Groq and Gemini are different model families, they rarely share the
-same mistake -- so a question both of them answer the same way is much more
-trustworthy than one only a single model produced.
+The verifier does not see the generated key. Different providers can still
+share mistakes; this project has not measured their error independence.
+Agreement does not establish source entailment, question quality, or calibration.
 
 --- Run it ---
     python verifier.py

@@ -42,6 +42,19 @@ def test_same_single_question_policy_has_identical_learning_curves():
     result = AblationSimulator(concepts, [question]).run_benchmark(30, 3, 1)
     assert result["adaptive_tutor"] == result["random_baseline"]
     assert result["question_counts"]["adaptive"] == result["question_counts"]["random"]
+    assert result["paired_difference_ci95_pp"] == [0.0, 0.0]
+
+
+def test_simulation_is_reproducible_and_exposes_exhaustion():
+    simulator = AblationSimulator(LIVE_COURSE_CONCEPTS, LIVE_QUESTION_BANK)
+    result = simulator.run_benchmark(10, 5, seed=7)
+    assert result == simulator.run_benchmark(10, 5, seed=7)
+    assert result["question_counts"]["adaptive"] < result["question_counts"]["random"]
+    assert result["equal_question_counts"] is False
+    lo, hi = result["paired_difference_ci95_pp"]
+    assert lo <= result["paired_difference_pp"] <= hi
+    assert result["bootstrap_replicates"] == 2000
+    assert simulator.run_benchmark(1, 1)["paired_difference_ci95_pp"] is None
 
 
 @pytest.mark.parametrize("students,sessions,size", [(0, 5, 4), (2, 0, 4), (2, 2, 0)])

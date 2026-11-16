@@ -1,0 +1,85 @@
+{
+  "baseline_commit": "42b0b63cf0e8334597ff53d00b91995fe962cc73",
+  "quiz_size_requested": 25,
+  "quiz_size_returned": 25,
+  "prerequisite_violations": [
+    "q_bayes_1",
+    "q_pca_1",
+    "q_svm_1",
+    "q_bayes_2",
+    "q_minnorm_1",
+    "q_pca_2",
+    "q_lda_1",
+    "q_bayes_intro",
+    "q_pca_intro",
+    "q_svm_intro",
+    "q_minnorm_2",
+    "q_lda_2",
+    "q_svm_2",
+    "q_pca_5"
+  ],
+  "simulation": {
+    "sessions": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "random_baseline": [
+      0.32,
+      0.33899999999999997,
+      0.358,
+      0.377,
+      0.395
+    ],
+    "adaptive_tutor": [
+      0.32,
+      0.33899999999999997,
+      0.359,
+      0.377,
+      0.39399999999999996
+    ],
+    "learning_curves": [
+      {
+        "session": "Session 1",
+        "random": 32.0,
+        "adaptive": 32.0
+      },
+      {
+        "session": "Session 2",
+        "random": 33.9,
+        "adaptive": 33.9
+      },
+      {
+        "session": "Session 3",
+        "random": 35.8,
+        "adaptive": 35.9
+      },
+      {
+        "session": "Session 4",
+        "random": 37.7,
+        "adaptive": 37.7
+      },
+      {
+        "session": "Session 5",
+        "random": 39.5,
+        "adaptive": 39.4
+      }
+    ],
+    "net_gain_percentage": "-0.1%",
+    "final_random": "39.5%",
+    "final_adaptive": "39.4%",
+    "sample_size": "30 simulated students across 8 course concepts",
+    "p_value": null,
+    "ragas_metrics": null,
+    "evaluation_kind": "simulation",
+    "statistics_status": "not_measured",
+    "ragas_status": "not_measured",
+    "question_counts": {
+      "random": 600,
+      "adaptive": 600
+    },
+    "seed": 42
+  }
+}

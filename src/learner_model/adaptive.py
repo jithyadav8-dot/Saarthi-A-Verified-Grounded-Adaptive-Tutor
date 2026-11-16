@@ -66,46 +66,37 @@ def build_quiz(
     target_difficulty=None,
     target_concept=None,
 ):
-    """Build a quiz: repeatedly pick concepts and questions tailored to mastery or user preferences.
-    
-    If target_difficulty (1-5) is provided, filters/prioritizes questions with that exact difficulty.
-    If target_concept is provided, prioritizes questions belonging to that concept.
+    """Choose unique verified items using the learner's actual readiness.
+
+    Automatic practice stops when the unused ready pool is exhausted. A manually
+    requested concept explicitly overrides prerequisite gating. Difficulty is a
+    nearest-match preference, not a promise that the bank contains every level.
     """
     used_ids = set(used_ids or [])
     quiz = []
-    local_masteries = dict(masteries)  # copy; we do not mutate the real model here
-
-    # Filter pool by target_concept if requested
-    concept_filtered_pool = questions
-    if target_concept:
-        concept_filtered_pool = [q for q in questions if get_question_concept_id(q) == target_concept]
-
     if not concepts or size <= 0:
         return []
-
-    # If target_difficulty is given and we have questions with exact difficulty, prioritize them
+    eligible_ids = {
+        c.concept_id for c in concepts
+        if (c.concept_id == target_concept if target_concept else
+            all(masteries.get(p, 0.0) >= PREREQ_THRESHOLD for p in c.prerequisites))
+    }
+    scheduled = {cid: 0 for cid in eligible_ids}
     for _ in range(size):
-        if target_concept:
-            cid = target_concept
-        else:
-            cid = select_next_concept(concepts, local_masteries)
-
-        diff = target_difficulty if target_difficulty is not None else choose_difficulty(local_masteries.get(cid, 0.0))
-        picked = pick_questions_for_concept(concept_filtered_pool, cid, diff, used_ids, n=1)
-
-        if not picked:
-            # Fallback 1: any unused question in concept_filtered_pool closest to target difficulty
-            remaining = [q for q in concept_filtered_pool if q.verified and q.q_id not in used_ids]
-            if not remaining:
-                break
-            remaining.sort(key=lambda q: abs(q.difficulty - diff))
-            picked = [remaining[0]]
-
-        q = picked[0]
+        remaining = [q for q in questions if q.verified and q.q_id not in used_ids
+                     and get_question_concept_id(q) in eligible_ids]
+        if not remaining:
+            break
+        available_ids = {get_question_concept_id(q) for q in remaining}
+        # Diversity is a scheduling penalty, never evidence of learning. Preserve
+        # concept order as the deterministic tie break.
+        cid = min((c.concept_id for c in concepts if c.concept_id in available_ids),
+                  key=lambda key: masteries.get(key, 0.0) + .05 * scheduled[key])
+        diff = target_difficulty if target_difficulty is not None else choose_difficulty(masteries.get(cid, 0.0))
+        q = pick_questions_for_concept(remaining, cid, diff, used_ids, n=1)[0]
         quiz.append(q)
         used_ids.add(q.q_id)
-        selected_cid = get_question_concept_id(q)
-        local_masteries[selected_cid] = min(1.0, local_masteries.get(selected_cid, 0.0) + 0.05)
+        scheduled[cid] += 1
     return quiz
 
 

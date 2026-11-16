@@ -102,6 +102,8 @@ def test_citation_filename_delimiters_are_encoded():
 
 def test_learner_mastery_and_feedback_survive_memory_reset(service):
     question = next(iter(service.QUESTION_BANK.values()))
+    service.get_student("persistent")
+    service._issue_questions("persistent", [question])
     result = service.submit_answer(service.AnswerRequest(student_id="persistent", q_id=question.q_id, answer=question.answer))
     service.STUDENTS.clear()
     service.SESSIONS.clear()
@@ -117,7 +119,8 @@ def test_failed_progress_write_does_not_change_mastery(service, monkeypatch):
     question = next(iter(service.QUESTION_BANK.values()))
     student = service.get_student("disk-error")
     before = student.all_masteries()
-    def failed_save(student_id):
+    service._issue_questions("disk-error", [question])
+    def failed_save(student_id, **kwargs):
         raise sqlite3.OperationalError("synthetic disk failure")
     monkeypatch.setattr(service, "_save_student", failed_save)
     with pytest.raises(HTTPException) as exc:

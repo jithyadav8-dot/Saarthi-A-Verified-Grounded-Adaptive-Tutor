@@ -11,6 +11,25 @@ const require = createRequire(import.meta.url);
 const emptyComponent = () => null;
 const icons = new Proxy({}, {get: (_, key) => key === "__esModule" ? true : emptyComponent});
 
+test("simulation view reveals unequal exposure and uncertainty", () => {
+  const {EvaluationResults} = loadComponent("../components/EvaluationResults.tsx", {0: {
+    sample_size: "10 simulated students", net_gain_percentage: "-1.0%", learning_curves: [], p_value: null,
+    question_counts: {adaptive: 11, random: 20}, equal_question_counts: false,
+    paired_difference_ci95_pp: [-2, -.5], seed: 42, assumptions: ["No forgetting"],
+  }, 2: false});
+  const html = renderToString(React.createElement(EvaluationResults));
+  assert.match(html, /Exposure differs/);
+  assert.match(html, /Paired bootstrap 95% interval/);
+  assert.match(html, /No forgetting/);
+});
+
+test("empty chat inspector never manufactures verified confidence", () => {
+  const {default: ChatPage} = loadComponent("../app/chat/page.tsx", {7: true});
+  const html = renderToString(React.createElement(ChatPage));
+  assert.match(html, /Not available/);
+  assert.doesNotMatch(html, /High \(Verified\)|% grounded/);
+});
+
 // Exercise real component rendering with server-returned fixtures, without a browser or providers.
 function loadComponent(relativePath, stateOverrides = {}) {
   const filename = fileURLToPath(new URL(relativePath, import.meta.url));

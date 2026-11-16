@@ -1,0 +1,131 @@
+{
+  "protocol": "saarthi-improvement-audit-v1",
+  "source_root": ".audit_tmp/baseline-42b0b63",
+  "seed": 42,
+  "dataset": {
+    "corpus_units": 28,
+    "in_scope": 20,
+    "off_topic": 10,
+    "near_miss": 4,
+    "sampling": "all bundled development queries; one authored slide; one issued-answer replay"
+  },
+  "backend": "hash:512|lexical; no model downloads or hosted calls",
+  "api_calls": 0,
+  "api_cost": 0,
+  "retrieval": {
+    "hit_at_1": 0.95,
+    "hit_at_3": 1,
+    "mrr_at_3": 0.975,
+    "precision_at_3": 0.4666666666666667,
+    "recall_at_3": 0.9208333333333333
+  },
+  "retrieval_ablations": {
+    "bm25": {
+      "hit_at_1": 0.75,
+      "hit_at_3": 0.95,
+      "mrr_at_3": 0.85,
+      "precision_at_3": 0.3833333333333333,
+      "recall_at_3": 0.8375
+    },
+    "hash_dense": {
+      "hit_at_1": 0.8,
+      "hit_at_3": 0.9,
+      "mrr_at_3": 0.85,
+      "precision_at_3": 0.36666666666666664,
+      "recall_at_3": 0.825
+    }
+  },
+  "engineering": {
+    "index_ms": 28.026900000440946,
+    "peak_python_traced_bytes": 375548,
+    "retrieval_median_ms": 1.0122000003320863,
+    "retrieval_p95_ms": 1.4664000000266242
+  },
+  "grounding": {
+    "in_scope_answered": 19,
+    "off_topic_refused": 10,
+    "near_miss_not_grounded": 4,
+    "faithfulness": "Not measured",
+    "semantic_citation_support": "Not measured"
+  },
+  "pptx": {
+    "probes": 7,
+    "recovered": 1,
+    "extraction_ms": 15.503200000239303
+  },
+  "quiz": {
+    "requested": 25,
+    "returned": 25,
+    "prerequisite_violations": 14
+  },
+  "answer_retry": {
+    "mastery_after_first": 0.7098,
+    "mastery_after_retry": 0.9292,
+    "history_entries": 2
+  },
+  "simulation": {
+    "sessions": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "random_baseline": [
+      0.32,
+      0.33899999999999997,
+      0.358,
+      0.377,
+      0.395
+    ],
+    "adaptive_tutor": [
+      0.32,
+      0.33899999999999997,
+      0.359,
+      0.377,
+      0.39399999999999996
+    ],
+    "learning_curves": [
+      {
+        "session": "Session 1",
+        "random": 32.0,
+        "adaptive": 32.0
+      },
+      {
+        "session": "Session 2",
+        "random": 33.9,
+        "adaptive": 33.9
+      },
+      {
+        "session": "Session 3",
+        "random": 35.8,
+        "adaptive": 35.9
+      },
+      {
+        "session": "Session 4",
+        "random": 37.7,
+        "adaptive": 37.7
+      },
+      {
+        "session": "Session 5",
+        "random": 39.5,
+        "adaptive": 39.4
+      }
+    ],
+    "net_gain_percentage": "-0.1%",
+    "final_random": "39.5%",
+    "final_adaptive": "39.4%",
+    "sample_size": "30 simulated students across 8 course concepts",
+    "p_value": null,
+    "ragas_metrics": null,
+    "evaluation_kind": "simulation",
+    "statistics_status": "not_measured",
+    "ragas_status": "not_measured",
+    "question_counts": {
+      "random": 600,
+      "adaptive": 600
+    },
+    "seed": 42
+  },
+  "limits": "Development fixtures, same author/corpus; timings are local observations, no speedup significance or real learner claim."
+}

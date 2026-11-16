@@ -9,6 +9,61 @@ from app.schemas.content_unit import ContentUnit
 from app.processing.chunker import chunk_text
 
 
+
+_MATH = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+
+
+def _xml_text(node):
+    """Render native text and common Office Math as readable linear notation.
+
+    This is structural extraction, not OCR or certified mathematical conversion.
+    Pick AlternateContent's first supported representation to avoid duplicate text.
+    """
+    tag = node.tag.rsplit("}", 1)[-1]
+    children = list(node)
+    if tag == "AlternateContent":
+        choices = [child for child in children if child.tag.rsplit("}", 1)[-1] == "Choice"]
+        return _xml_text(choices[0] if choices else children[-1]) if children else ""
+    if tag == "t":
+        return node.text or ""
+    if tag == "br":
+        return "\n"
+    def part(name):
+        child = next((c for c in children if c.tag == f"{{{_MATH}}}{name}"), None)
+        return _xml_text(child) if child is not None else ""
+    if node.tag.startswith("{" + _MATH + "}"):
+        if tag == "f":
+            return f"({part('num')})/({part('den')})"
+        if tag in {"sSup", "sSub", "sSubSup"}:
+            result = f"({part('e')})"
+            if tag in {"sSub", "sSubSup"}:
+                result += f"_({part('sub')})"
+            if tag in {"sSup", "sSubSup"}:
+                result += f"^({part('sup')})"
+            return result
+        if tag == "rad":
+            degree = part('deg')
+            return f"root[{degree}]({part('e')})" if degree else f"sqrt({part('e')})"
+        if tag == "m":
+            rows = [" | ".join(_xml_text(c) for c in row if c.tag.endswith('}e'))
+                    for row in children if row.tag.endswith('}mr')]
+            return "[" + "; ".join(rows) + "]"
+        if tag in {"nary", "limLow", "limUpp", "acc", "bar", "func", "d"}:
+            # Do not silently imply a complete reconstruction of complex operators.
+            return "[Office Math " + tag + ": " + " ".join(_xml_text(c) for c in children) + "]"
+    return "".join(_xml_text(child) for child in children)
+
+
+def _shape_text(shape):
+    if hasattr(shape, "shapes"):
+        return "\n".join(filter(None, (_shape_text(child) for child in shape.shapes)))
+    if getattr(shape, "has_table", False):
+        return "\n".join(" | ".join(_xml_text(cell._tc) for cell in row.cells) for row in shape.table.rows)
+    if getattr(shape, "has_text_frame", False):
+        return "\n".join(_xml_text(p._p) for p in shape.text_frame.paragraphs).strip()
+    return ""
+
+
 def _extract_ppt_fallback_zip(file_path: str) -> list[tuple[int, str]]:
     """Extract slides text using zipfile XML parsing when python-pptx fails."""
     slides = []
@@ -19,8 +74,8 @@ def _extract_ppt_fallback_zip(file_path: str) -> list[tuple[int, str]]:
             for idx, name in enumerate(slide_names):
                 xml_data = z.read(name)
                 root = ET.fromstring(xml_data)
-                texts = [elem.text for elem in root.iter() if elem.tag.endswith("}t") and elem.text and elem.text.strip()]
-                full_text = " ".join(texts).strip()
+                full_text = "\n".join(_xml_text(elem) for elem in root.iter()
+                                      if elem.tag == "{http://schemas.openxmlformats.org/drawingml/2006/main}p").strip()
                 if full_text:
                     slides.append((idx + 1, full_text))
     except Exception as e:
@@ -37,13 +92,12 @@ def extract_ppt_content(file_path: str) -> list[ContentUnit]:
     try:
         presentation = Presentation(file_path)
         for slide_index, slide in enumerate(presentation.slides, start=1):
-            slide_text_parts = []
-            for shape in slide.shapes:
-                if hasattr(shape, "text"):
-                    text = shape.text.strip()
-                    if text:
-                        slide_text_parts.append(text)
-            slide_text = "\n".join(slide_text_parts).strip()
+            slide_text_parts = [_shape_text(shape) for shape in slide.shapes]
+            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                notes = slide.notes_slide.notes_text_frame.text.strip()
+                if notes:
+                    slide_text_parts.append("[Speaker notes] " + notes)
+            slide_text = "\n".join(part for part in slide_text_parts if part).strip()
             if slide_text:
                 slide_data.append((slide_index, slide_text))
     except Exception as exc:

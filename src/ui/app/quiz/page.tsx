@@ -74,6 +74,7 @@ export default function QuizPage() {
         if (quizRes.questions) {
           const formatted: Question[] = quizRes.questions.map((q) => ({
             q_id: q.q_id,
+            attempt_id: q.attempt_id,
             concept_id: q.concept_id,
             topic: q.topic,
             source_location: q.source_location,
@@ -142,9 +143,10 @@ export default function QuizPage() {
       const res = await submitStudentAnswer(
         "s1",
         activeQuestion.q_id,
-        chosenOption
+        chosenOption,
+        activeQuestion.attempt_id
       );
-      setNextRecommendation(`Next recommended concept: ${res.next_concept} (Difficulty ${res.next_difficulty})`);
+      setNextRecommendation(`${res.mastery_reason || "Mastery updated from your answer."} Next: ${res.next_concept} (Difficulty ${res.next_difficulty}).`);
 
       setConcepts((prev) =>
         prev.map((c) => {
@@ -312,7 +314,7 @@ export default function QuizPage() {
           {/* Left: Active Question Arena (7 cols) */}
           <div className="lg:col-span-7 h-full">
             {activeQuestion ? <LearnerModelArena
-              key={activeQuestion.q_id}
+              key={activeQuestion.attempt_id || activeQuestion.q_id}
               concepts={concepts}
               activeQuestion={activeQuestion}
               questionIndex={currentQuestionIndex}

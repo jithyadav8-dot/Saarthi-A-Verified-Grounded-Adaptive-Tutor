@@ -1,0 +1,79 @@
+{
+  "protocol": "grounding-contract-v1",
+  "seed": null,
+  "conditions": "hash:512|lexical; one source per case; scripted generator; zero gate thresholds; 7 repeats",
+  "scope": "Development contract regression, not faithfulness, real model hallucination rate, or educational effectiveness",
+  "cases": 9,
+  "valid_accepted": 4,
+  "valid_total": 4,
+  "invalid_rejected": 5,
+  "invalid_total": 5,
+  "median_answer_ms": 0.15249999978550477,
+  "api_calls": 0,
+  "api_cost": 0,
+  "rows": [
+    {
+      "case": "literal",
+      "expected_accept": true,
+      "accepted": true,
+      "status": "grounded",
+      "mode": "generative"
+    },
+    {
+      "case": "paraphrase",
+      "expected_accept": true,
+      "accepted": true,
+      "status": "grounded",
+      "mode": "generative"
+    },
+    {
+      "case": "numeric_valid",
+      "expected_accept": true,
+      "accepted": true,
+      "status": "grounded",
+      "mode": "generative"
+    },
+    {
+      "case": "quote_valid",
+      "expected_accept": true,
+      "accepted": true,
+      "status": "grounded",
+      "mode": "generative"
+    },
+    {
+      "case": "number_changed",
+      "expected_accept": false,
+      "accepted": false,
+      "status": "refused",
+      "mode": "refusal"
+    },
+    {
+      "case": "negation_added",
+      "expected_accept": false,
+      "accepted": false,
+      "status": "refused",
+      "mode": "refusal"
+    },
+    {
+      "case": "negation_removed",
+      "expected_accept": false,
+      "accepted": false,
+      "status": "refused",
+      "mode": "refusal"
+    },
+    {
+      "case": "fabricated_quote",
+      "expected_accept": false,
+      "accepted": false,
+      "status": "refused",
+      "mode": "refusal"
+    },
+    {
+      "case": "irrelevant_quote",
+      "expected_accept": false,
+      "accepted": false,
+      "status": "refused",
+      "mode": "refusal"
+    }
+  ]
+}

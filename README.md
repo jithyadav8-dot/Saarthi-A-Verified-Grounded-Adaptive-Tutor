@@ -6,15 +6,18 @@ Saarthi is a local study-companion prototype built with **FastAPI, Next.js, and 
 
 The current quiz bank and assessment graph are curated examples. Uploading a course adds retrieval content; it does **not** automatically generate a new verified question bank. Model agreement and citation checks are useful signals, not guarantees of correctness.
 
-[Quick start](#quick-start-windows-powershell) · [Architecture](#architecture) · [Verification](#verification) · [Engineering audit](docs/ENGINEERING_AUDIT.md)
+[Quick start](#quick-start-windows-powershell) · [Three-minute demo](docs/JUDGE_WALKTHROUGH.md) · [Implementation report](docs/improvement-audit/IMPLEMENTATION_REPORT.md) · [Controlled benchmarks](docs/improvement-audit/BENCHMARK_RESULTS.md) · [Pramana comparison](docs/improvement-audit/COMPARISON.md)
 
 ## What you can do
+
+- **Practice directly from your notes.** The homepage builds up to five fill-in-the-blank recall cards from definition sentences in a selected source. Each answer reveals the exact passage and its location. Practice missed terms in a second round. This local word-recall exercise is separate from the curated BKT quiz.
 
 - **Ask questions about course material.** Hybrid BM25 and embedding retrieval supplies source excerpts, page/slide references, and available timestamps. The answerer can refuse unsupported questions or fall back to cited excerpts when a provider fails.
 - **Upload material.** The unified API accepts PDF, PPTX, TXT, Markdown, and supported image/audio/video formats. Text and basic document parsing work locally; enriched image and media processing can require providers.
 - **Inspect concepts and evidence.** The graph view displays the bundled curriculum, actual learner mastery when available, and source evidence when present. Missing evidence and unmeasured values are labelled explicitly.
 - **Practice with adaptive quizzes.** Select difficulty, concept, and question count. Answer feedback updates local BKT mastery. Quizzes stop at the eligible unique-question pool instead of repeating questions to fill a request.
-- **Resume local progress.** Chat history and learner progress persist in SQLite.
+- **Resume local progress.** Chat history, evidence metadata, learner progress and issued quiz attempts persist in SQLite. An identical answer retry returns the original feedback and records one observation.
+- **Search inside slides.** PPTX uploads preserve native tables, grouped text, speaker notes and common Office Math forms. Citations retain the slide location.
 - **Compare simulated selection policies.** The benchmark uses the same simulated learning rule for adaptive and random selection. RAGAS scores and statistical significance remain **Not measured**.
 
 ## Quick start (Windows PowerShell)
@@ -64,7 +67,7 @@ npm run dev
 
 Open [Saarthi at localhost:3000](http://localhost:3000). Pages include chat, the concept graph, quizzes, and the simulation benchmark.
 
-The frontend defaults to `http://localhost:8000`. To change it, set `NEXT_PUBLIC_API_BASE_URL` in `src/ui/.env.local`. The PDF.js worker is copied automatically before development and production builds. A cold production build downloads the configured Google fonts and needs network access.
+The frontend defaults to `http://localhost:8000`. To change it, set `NEXT_PUBLIC_API_BASE_URL` in `src/ui/.env.local`. Development and production builds copy the installed PDF.js worker locally and use system fonts.
 
 ### Optional model providers
 
@@ -82,7 +85,7 @@ See [retrieval and graph architecture](docs/POD_B_ARCHITECTURE.md), [assessment 
 Course files → parsers → ContentUnits → hybrid retrieval → cited tutor answers
                               └──────→ concept graph and source evidence
 
-Bundled assessment bank → quiz selection → answer grading → BKT mastery
+Bundled assessment bank → quiz selection → issued attempt → grade once → BKT mastery
                                ↑                              │
                                └──────────────────────────────┘
 
@@ -121,18 +124,20 @@ npm run build
 npm run lint
 ```
 
-Latest recorded audit, **November 3–5, 2026**:
+The Pramana comparison uses the audited baseline at `42b0b63`. The controlled workloads ran on November 5, 2026, with final regression verification on November 16.
 
 | Check | Observed result |
 |---|---|
-| Python regressions | **229 passed**, 0 failed |
-| Frontend API/render/callback checks | **18 passed**, 0 failed |
+| Python regressions | **295 passed**, including upload-to-recall grading, source replacement, repeated practice cycles and concurrent answer retries |
+| Frontend API/render/callback checks | **22 passed**, including the missed-term practice round |
 | TypeScript, production build, real offline server smoke | **Passed** |
 | npm critical/high package findings | **2/3 → 0/0**; 16 moderate findings remain in development dependencies |
-| Frontend lint | **21 errors, 34 warnings remain** |
-| Corrected simulation | **39.4% adaptive vs. 39.5% random** final simulated mastery; no adaptive advantage established |
+| Frontend lint | **18 errors, 27 warnings remain** |
+| Simulation (seed 42) | **38.1% adaptive vs. 39.5% random** final simulated proficiency, with **517 vs. 600** questions answered |
 
-These are recorded results, not a live CI badge. The frontend checks do not replace browser end-to-end tests. Hosted-model accuracy, real learner outcomes, multimodal quality, RAGAS, and end-to-end performance remain unmeasured. See the [hypotheses, before/after evidence and open work](docs/ENGINEERING_AUDIT.md) and [machine-readable results](docs/audit_evidence.json).
+The production browser check covered quiz submission, mastery feedback and cited offline chat. The real-server smoke also covers upload/source access, reporting and chat reload. Hosted-model accuracy, RAGAS and real learner outcomes remain unmeasured. The package findings above are from the earlier audit. See [benchmark methods and raw results](docs/improvement-audit/BENCHMARK_RESULTS.md), [next improvements](docs/improvement-audit/REMAINING_IMPROVEMENTS.md) and the [earlier engineering audit](docs/ENGINEERING_AUDIT.md).
+
+API clients should keep the `attempt_id` returned by `/quiz` or `/diagnostic` and send it with `student_id`, `q_id` and `answer` to `/answer`. The same attempt and answer can be retried safely. Request a fresh attempt to practice again. An unissued question, a changed retry or an ambiguous ID-less submission returns HTTP 409. Diagnostics update the knowledge estimate without adding a practice learning transition.
 
 ## Operating limits
 

@@ -56,6 +56,8 @@ interface MessageItem {
   }>;
   status?: "grounded" | "partial" | "refused";
   confidence?: number | null;
+  verification_note?: string | null;
+  confidence_kind?: string;
   claims?: Array<{
     text: string;
     supported: boolean;
@@ -86,9 +88,9 @@ const STARTER_PROMPTS = [
   },
   {
     icon: GraduationCap,
-    title: "Generate Practice Question",
-    prompt: "Generate an adaptive practice question based on the most difficult concept in my uploaded notes.",
-    tag: "Quiz",
+    title: "Review a Difficult Concept",
+    prompt: "Explain a difficult concept from my uploaded notes and show the supporting passages.",
+    tag: "Review",
   },
 ];
 
@@ -165,6 +167,12 @@ export default function ChatPage() {
           role: m.role,
           content: m.content,
           citations: m.citations || [],
+          status: m.status,
+          confidence: m.confidence,
+          confidence_kind: m.confidence_kind,
+          verification_note: m.verification_note,
+          claims: m.claims,
+          outside_knowledge: m.outside_knowledge,
           created_at: m.created_at,
         }));
         setMessages(formatted);
@@ -207,7 +215,7 @@ export default function ChatPage() {
   };
 
   // Send message
-  const handleSend = async (customPrompt?: string) => {
+  const handleSend = async (customPrompt?: string, outside = allowOutsideKnowledge) => {
     const textToSend = (customPrompt || input).trim();
     if (!textToSend || isLoading) return;
 
@@ -250,7 +258,7 @@ export default function ChatPage() {
       const resp = await sendSessionMessage(
         targetSessionId,
         promptPayload,
-        allowOutsideKnowledge,
+        outside,
         "student_default"
       );
 
@@ -263,6 +271,8 @@ export default function ChatPage() {
         citations: resp.citations || [],
         status: resp.status,
         confidence: resp.confidence,
+        confidence_kind: resp.confidence_kind,
+        verification_note: resp.verification_note,
         claims: resp.claims,
         outside_knowledge: resp.outside_knowledge,
         created_at: new Date().toISOString(),
@@ -472,8 +482,8 @@ export default function ChatPage() {
                         Namaste! I&apos;m Saarthi
                       </h2>
                       <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                        Your verified adaptive tutor. Every explanation is strictly grounded in
-                        your ingested course notes, slides, and video transcripts with zero hallucination.
+                        Your source-linked study companion. Explore explanations from your course notes,
+                        slides, and video transcripts, and inspect the evidence behind each answer.
                       </p>
                     </div>
 
@@ -531,7 +541,7 @@ export default function ChatPage() {
                   </div>
                 ) : (
                   /* Active Message Stream */
-                  messages.map((msg) => (
+                  messages.map((msg, index) => (
                     <div
                       key={msg.id}
                       className={`flex flex-col space-y-1.5 animate-fadeIn ${msg.role === "user" ? "items-end" : "items-start"
@@ -551,7 +561,7 @@ export default function ChatPage() {
                             </span>
                             {msg.confidence !== undefined && msg.confidence !== null && (
                               <span className="text-[10px] px-2 py-0.2 rounded-full font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                                {(msg.confidence * 100).toFixed(0)}% grounded
+                                {msg.confidence_kind === "accepted_claim_fraction" ? "Evidence screen" : "Retrieval score"}: {(msg.confidence * 100).toFixed(0)}%
                               </span>
                             )}
                           </div>
@@ -563,17 +573,20 @@ export default function ChatPage() {
                         <div className="max-w-[90%] sm:max-w-[85%] p-4 rounded-2xl bg-rose-50 dark:bg-rose-500/[0.08] border border-rose-200 dark:border-rose-500/30 text-rose-900 dark:text-rose-200 shadow-2xs space-y-2">
                           <div className="flex items-center gap-2 font-bold text-xs text-rose-600 dark:text-rose-400">
                             <ShieldAlert className="w-4 h-4 shrink-0" />
-                            <span>Strict Grounding Refusal (Zero Hallucination Policy)</span>
+                            <span>Insufficient course evidence</span>
                           </div>
                           <p className="text-xs leading-relaxed whitespace-pre-line">
                             {msg.content}
                           </p>
                           <div className="pt-2 border-t border-rose-200 dark:border-rose-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-rose-700 dark:text-rose-300/80">
-                            <span>This topic is missing from your uploaded course files.</span>
+                            <span>The tutor could not support an answer from these sources.</span>
                             <button
                               onClick={() => {
-                                setAllowOutsideKnowledge(true);
-                                handleSend(msg.content);
+                                const original = messages.slice(0, index).reverse().find(turn => turn.role === "user");
+                                if (original) {
+                                  setAllowOutsideKnowledge(true);
+                                  void handleSend(original.content, true);
+                                }
                               }}
                               className="underline font-bold hover:text-rose-950 dark:hover:text-white cursor-pointer text-left sm:text-right"
                             >
@@ -591,6 +604,7 @@ export default function ChatPage() {
                           <div className="whitespace-pre-line leading-relaxed">{msg.content}</div>
 
                           {/* Grounding Citations */}
+                          {msg.verification_note && <p className="text-xs text-zinc-500 mt-2">{msg.verification_note}</p>}
                           {msg.citations && msg.citations.length > 0 && (
                             <div className="pt-2.5 border-t border-zinc-100 dark:border-white/[0.06] space-y-1.5">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 block">
@@ -687,17 +701,17 @@ export default function ChatPage() {
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-zinc-500 dark:text-zinc-400 font-medium">Confidence</span>
+                      <span className="text-zinc-500 dark:text-zinc-400 font-medium">{latestAnswerData?.confidence_kind === "accepted_claim_fraction" ? "Claims passing screen" : "Retrieval score"}</span>
                       <span className="font-bold text-zinc-900 dark:text-zinc-100">
-                        {latestAnswerData?.confidence
+                        {latestAnswerData?.confidence != null
                           ? `${(latestAnswerData.confidence * 100).toFixed(1)}%`
-                          : "High (Verified)"}
+                          : "Not available"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-zinc-500 dark:text-zinc-400 font-medium">Outside Knowledge</span>
                       <span className="font-semibold text-zinc-700 dark:text-zinc-300">
-                        {allowOutsideKnowledge ? "Permitted" : "Strictly Blocked"}
+                        {allowOutsideKnowledge ? "Permitted" : "Not requested"}
                       </span>
                     </div>
                   </div>
@@ -736,11 +750,11 @@ export default function ChatPage() {
                     )}
                   </div>
 
-                  {/* Verified Atomic Claims */}
+                  {/* Claims and Evidence */}
                   {latestAnswerData?.claims && latestAnswerData.claims.length > 0 && (
                     <div className="space-y-2 pt-2 border-t border-zinc-200/80 dark:border-white/[0.06]">
                       <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                        Verified Atomic Claims
+                        Claims and Evidence
                       </h4>
                       <div className="space-y-1.5">
                         {latestAnswerData.claims.map((cl: any, idx: number) => (
@@ -827,7 +841,7 @@ export default function ChatPage() {
 
             <div className="text-center mt-1.5">
               <p className="text-[10px] text-zinc-500 dark:text-zinc-500 font-medium">
-                Grounded in uploaded course materials with verified citations.
+                Source-linked answers. Citation validity and semantic support are different checks.
               </p>
             </div>
           </div>

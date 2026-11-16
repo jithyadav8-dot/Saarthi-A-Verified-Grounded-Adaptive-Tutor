@@ -23,11 +23,15 @@ export interface Citation {
   location: Location;
   excerpt: string;
   diagram_caption?: string | null;
+  excerpt_start?: number | null; excerpt_end?: number | null;
 }
 export interface ChatResponse {
   text: string;
   status: "grounded" | "partial" | "refused";
   confidence: number | null;
+  confidence_kind?: "none" | "retrieval_score" | "accepted_claim_fraction";
+  verification?: "none" | "extractive" | "lexical" | "model_checked";
+  verification_note?: string | null;
   citations: Citation[];
   claims: { text: string; supported: boolean; citations?: Citation[] }[];
   outside_knowledge: string[];
@@ -39,6 +43,9 @@ export interface ChatSession {
 export interface SessionMessage {
   id: string; role: "user" | "assistant"; content: string;
   citations: Citation[]; created_at: string;
+  status?: ChatResponse["status"]; confidence?: number | null;
+  confidence_kind?: ChatResponse["confidence_kind"]; verification_note?: string | null;
+  claims?: ChatResponse["claims"]; outside_knowledge?: string[];
 }
 export interface CompletedQuiz {
   id: string; student_id: string; topic: string; score: number; total: number; completed_at: string;
@@ -50,12 +57,14 @@ export interface GraphNode {
   description: string; keyTakeaways: string[];
 }
 export interface QuizQuestion {
+  attempt_id?: string;
   q_id: string; concept_id: string; topic: string; source_location: Location;
   difficulty: number; type: "mcq" | "numeric" | "short"; stem: string; options?: string[] | null;
   verified: boolean; verifier_agreement: number; sympy_verified?: boolean;
 }
 export interface AnswerResult {
   correct: boolean; correct_answer: string; explanation: string; concept_id: string;
+  previous_mastery?: number; mastery_reason?: string; replayed?: boolean;
   new_mastery: number; next_concept: string | null; next_difficulty: number;
 }
 export interface UploadedMaterial {
@@ -69,6 +78,9 @@ export interface UploadResult {
 }
 export interface AblationResult {
   evaluation_kind?: string; sessions: number[];
+  seed?: number; paired_difference_ci95_pp?: [number, number] | null;
+  question_counts?: {random: number; adaptive: number};
+  equal_question_counts?: boolean; assumptions?: string[];
   learning_curves: { session: string; random: number; adaptive: number }[];
   final_random: string; final_adaptive: string; net_gain_percentage: string;
   p_value: string | number | null; sample_size: string;
@@ -114,8 +126,8 @@ export const fetchKnowledgeGraph = () => request<{nodes: GraphNode[]; edges: {so
 export const fetchStudentMastery = (student: string) => request<{board: {concept_id: string; mastery: number}[]}>(`/mastery/${id(student)}`);
 export const fetchAdaptiveQuiz = (student: string, size: number, difficulty?: number, concept?: string) =>
   request<{questions: QuizQuestion[]}>("/quiz", json({student_id: student, size, difficulty, concept_id: concept}));
-export const submitStudentAnswer = (student: string, question: string, answer: string) =>
-  request<AnswerResult>("/answer", json({student_id: student, q_id: question, answer}));
+export const submitStudentAnswer = (student: string, question: string, answer: string, attemptId?: string) =>
+  request<AnswerResult>("/answer", json({student_id: student, q_id: question, answer, attempt_id: attemptId}));
 export const triggerDiagnostic = (student: string) =>
   request<{masteries: Record<string, number>; questions: QuizQuestion[]; status: string}>(`/diagnostic?student_id=${id(student)}`, {method: "POST"});
 export const fetchUploadedMaterials = async () => (await request<{materials: UploadedMaterial[]}>("/ingest/materials")).materials;
@@ -130,3 +142,13 @@ export async function uploadCourseFiles(files: File[]): Promise<UploadResult> {
 }
 export const fetchAblationBenchmarks = () => request<AblationResult>("/eval/ablation");
 export const fetchRagasMetrics = () => request<RagasResult>("/eval/ragas");
+
+export interface RecallCard { item_id: string; prompt: string; location: string }
+export interface RecallFeedback {
+  matches: boolean; term: string;
+  citation: { source_id: string; unit_id: string; label: string; excerpt: string };
+}
+export const listPracticeSources = () => request<{sources: string[]}>("/practice/sources");
+export const loadRecallCards = (source: string) => request<{cards: RecallCard[]}>(`/practice/cards?source_id=${id(source)}`);
+export const checkRecall = (source: string, card: string, answer: string) =>
+  request<RecallFeedback>("/practice/check", json({source_id: source, item_id: card, answer}));

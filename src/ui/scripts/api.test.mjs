@@ -53,3 +53,12 @@ test("session IDs are encoded in request paths", async () => {
   };
   await api.getSession("a/b?c");
 });
+
+test("answer submissions preserve the issued attempt for safe retries", async () => {
+  global.fetch = async (url, init) => {
+    assert.ok(url.endsWith("/answer"));
+    assert.deepEqual(JSON.parse(init.body), {student_id: "s1", q_id: "q1", answer: "42", attempt_id: "attempt-1"});
+    return Response.json({correct: true, replayed: true, new_mastery: .7});
+  };
+  assert.equal((await api.submitStudentAnswer("s1", "q1", "42", "attempt-1")).replayed, true);
+});

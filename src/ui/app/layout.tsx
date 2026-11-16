@@ -1,16 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Saarthi — A Verified-Grounded Adaptive Tutor",
@@ -26,7 +15,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.className} ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className="h-full antialiased"
     >
       <head>
         <script
@@ -44,7 +33,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body suppressHydrationWarning className={`${geistSans.className} min-h-full flex flex-col bg-[#fafafa] dark:bg-[#06090e] text-zinc-900 dark:text-[#f3f4f6] transition-colors`}>
+      <body suppressHydrationWarning className="min-h-full flex flex-col bg-[#fafafa] dark:bg-[#06090e] text-zinc-900 dark:text-[#f3f4f6] transition-colors">
         {children}
       </body>
     </html>

@@ -343,7 +343,7 @@ export function GroundedChat({
 
           <span className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
-            100% Citation Grounded
+            Source-linked answers
           </span>
         </div>
       </div>
@@ -359,7 +359,7 @@ export function GroundedChat({
               Verified Grounded Course Tutor
             </h3>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-md mt-1 mb-4 leading-relaxed">
-              Ask any question or upload course documents. Every explanation is strictly grounded in your syllabus with verifiable citation chips.
+              Ask a question or upload course documents. Inspect the cited passages to check how each explanation relates to your syllabus.
             </p>
           </div>
         ) : (

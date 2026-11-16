@@ -56,9 +56,7 @@ embeddings are cached on disk, so a paid API embeds each unit once.
    when nothing downstream can catch a bad pass, *permissive* (0.8 x lowest in-scope score) when an LLM judge follows.
 2. **LLM judgement** - answer only from numbered excerpts as atomic claims, each citing unit ids; or declare the
    material does not cover it.
-3. **Claim check** - cited ids must be retrieved units; each claim's content words must be mostly present in its
-   cited units; optionally (`VERIFY_WITH_LLM=1`) an LLM fact-checks each claim. Failing claims are never shown as
-   source-backed: they move to `outside_knowledge` and the status becomes *partial*. No supported claim -> *refused*.
+3. **Claim check** — the answerer validates retrieved IDs, exact quotes when supplied, lexical overlap, numeric literals and obvious negation changes. With `VERIFY_WITH_LLM=1`, each surviving claim needs an explicit positive model verdict. A malformed response triggers the gated extractive fallback. Unsupported claims are omitted from the grounded answer. If none survive, the answerer refuses. Source excerpts carry offsets into extracted searchable text. Session history retains each answer's verification method and score meaning. See the [implementation report](improvement-audit/IMPLEMENTATION_REPORT.md).
 4. **Near-miss flag** - a term the course never uses placed next to a concept it does cover ("convolutional neural
    network", "derivative of sin x") caps the status at *partial* with an explanation, and tells the LLM.
 5. **Outside knowledge** is returned only when the caller opts in, only for refused questions, and always labelled.

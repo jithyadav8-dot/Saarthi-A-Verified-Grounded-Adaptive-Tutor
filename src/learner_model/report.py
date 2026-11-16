@@ -39,6 +39,8 @@ COMMON_MISCONCEPTIONS = {
 
 
 def format_location(loc):
+    if hasattr(loc, "model_dump"):
+        loc = loc.model_dump(exclude_none=True)
     if not loc:
         return "(no source)"
     if "timestamp" in loc:
@@ -100,7 +102,7 @@ def build_report(session, student, concepts):
             lines.append(f"       you answered : {ans}")
             lines.append(f"       correct      : {q.answer}")
             lines.append(f"       source       : {format_location(q.source_location)}")
-            lines.append(f"       likely issue : {llm_misconception(concept_id, ans)}")
+            lines.append(f"       review focus (not a diagnosis): {llm_misconception(concept_id, ans)}")
     lines.append("-" * 60)
 
     nxt = select_next_concept(concepts, student.all_masteries())

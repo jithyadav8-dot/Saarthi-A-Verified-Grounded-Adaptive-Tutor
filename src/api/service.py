@@ -76,6 +76,7 @@ from src.assessment.generator import (
 )
 from src.assessment.verifier import verify_question, make_gemini_client, answers_match
 from src.assessment.dedup import find_duplicate
+from src.assessment.recall import normalize_term, recall_items
 
 # Pod A Ingestion Pipelines
 from src.ingestion.processing.chunker import chunk_text
@@ -196,7 +197,21 @@ def _init_session_db() -> None:
             student_id TEXT PRIMARY KEY,
             state_json TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS assessment_attempts (
+            attempt_id TEXT PRIMARY KEY,
+            student_id TEXT NOT NULL,
+            q_id TEXT NOT NULL,
+            mode TEXT NOT NULL CHECK(mode IN ('practice', 'diagnostic')),
+            answer TEXT,
+            response_json TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS attempts_student_question
+            ON assessment_attempts(student_id, q_id);
     """)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(chat_messages)")}
+    if "answer_meta_json" not in columns:
+        conn.execute("ALTER TABLE chat_messages ADD COLUMN answer_meta_json TEXT DEFAULT '{}'")
     conn.commit()
     conn.close()
 
@@ -221,17 +236,41 @@ def get_student(student_id: str) -> LearnerModel:
         return STUDENTS[student_id]
 
 
-def _save_student(student_id: str):
+def _save_student(student_id: str, connection=None):
     state = {
         "masteries": STUDENTS[student_id].all_masteries(),
         "history": [{"q_id": q.q_id, "answer": answer, "correct": correct}
                     for q, answer, correct in SESSIONS[student_id]],
         "used_qids": sorted(USED_QIDS[student_id]),
     }
-    with closing(_get_session_db()) as conn, conn:
-        conn.execute("INSERT INTO learner_profiles (student_id, state_json) VALUES (?, ?) "
-                     "ON CONFLICT(student_id) DO UPDATE SET state_json = excluded.state_json",
-                     (student_id, json_lib.dumps(state)))
+    query = ("INSERT INTO learner_profiles (student_id, state_json) VALUES (?, ?) "
+             "ON CONFLICT(student_id) DO UPDATE SET state_json = excluded.state_json")
+    parameters = (student_id, json_lib.dumps(state))
+    if connection is not None:
+        connection.execute(query, parameters)
+    else:
+        with closing(_get_session_db()) as conn, conn:
+            conn.execute(query, parameters)
+
+
+def _issue_questions(student_id, questions, mode="practice"):
+    """Persist issuance and repeat avoidance together before exposing questions."""
+    previous = set(USED_QIDS[student_id])
+    issued = []
+    try:
+        with closing(_get_session_db()) as conn, conn:
+            for q in questions:
+                attempt_id = str(uuid.uuid4())
+                conn.execute("INSERT INTO assessment_attempts "
+                             "(attempt_id, student_id, q_id, mode, created_at) VALUES (?, ?, ?, ?, ?)",
+                             (attempt_id, student_id, q.q_id, mode, datetime.now(timezone.utc).isoformat()))
+                USED_QIDS[student_id].add(q.q_id)
+                issued.append({**q_to_dict(q), "attempt_id": attempt_id})
+            _save_student(student_id, connection=conn)
+    except (sqlite3.Error, OSError) as exc:
+        USED_QIDS[student_id] = previous
+        raise HTTPException(status_code=503, detail="Questions could not be saved; please retry.") from exc
+    return issued
 
 
 def q_to_dict(q: Question, include_answer: bool = False) -> Dict[str, Any]:
@@ -278,7 +317,8 @@ class QuizRequest(BaseModel):
 class AnswerRequest(BaseModel):
     student_id: str
     q_id: str
-    answer: str
+    answer: str = Field(..., min_length=1, max_length=4096)
+    attempt_id: Optional[str] = Field(None, max_length=100)
 
 
 class GenerateRequest(BaseModel):
@@ -371,6 +411,8 @@ def chat(req: ChatRequest):
                 "timestamp": f"@{int(s.location.t_start)}s" if s.location.t_start is not None else None,
             },
             "excerpt": s.excerpt,
+            "excerpt_start": s.excerpt_start,
+            "excerpt_end": s.excerpt_end,
             "diagram_caption": getattr(s, "image_caption", None),
         })
 
@@ -383,6 +425,9 @@ def chat(req: ChatRequest):
         "status": ans.status.value if hasattr(ans.status, "value") else str(ans.status),
         "text": display_text,
         "confidence": ans.confidence,
+        "confidence_kind": ans.confidence_kind,
+        "verification": ans.verification,
+        "verification_note": ans.message,
         "citations": citations,
         "claims": [c.model_dump() for c in ans.claims],
         "outside_knowledge": ans.outside_knowledge,
@@ -467,6 +512,37 @@ def get_evidence_unit(unit_id: str):
             "image_caption": getattr(u, "image_caption", None),
         }
     raise HTTPException(status_code=404, detail="Evidence unit not found")
+
+
+class RecallSubmission(BaseModel):
+    source_id: str = Field(min_length=1, max_length=512)
+    item_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    answer: str = Field(min_length=1, max_length=256)
+
+
+@app.get("/practice/sources", tags=["Source recall"])
+def recall_sources():
+    return {"sources": sorted(rt.bundle.store.sources())}
+
+
+@app.get("/practice/cards", tags=["Source recall"])
+def source_recall_cards(source_id: str = Query(min_length=1, max_length=512)):
+    units = rt.bundle.store.by_source(source_id)
+    if not units:
+        raise HTTPException(status_code=404, detail="This source is no longer indexed.")
+    return {"cards": [{"item_id": item.key, "prompt": item.prompt, "location": item.unit.location.label()}
+                      for item in recall_items(units)]}
+
+
+@app.post("/practice/check", tags=["Source recall"])
+def check_source_recall(req: RecallSubmission):
+    if not req.answer.strip():
+        raise HTTPException(status_code=422, detail="Enter the missing term.")
+    for item in recall_items(rt.bundle.store.by_source(req.source_id)):
+        if item.key == req.item_id:
+            return {"matches": normalize_term(req.answer) == normalize_term(item.answer),
+                    "term": item.answer, "citation": make_citation(item.unit, item.quote)}
+    raise HTTPException(status_code=409, detail="The source changed. Reload its questions to continue.")
 
 
 @app.get("/concepts", tags=["Knowledge Graph"])
@@ -837,87 +913,90 @@ def list_uploaded_materials():
 # --------------------------------------------------------------------------- #
 @app.post("/quiz", tags=["Assessment"])
 def generate_quiz(req: QuizRequest):
-    """Generates an adaptive or customized quiz tailored to question count and difficulty preferences."""
-    student = get_student(req.student_id)
-    if req.concept_id and req.concept_id not in CONCEPTS_BY_ID:
-        raise HTTPException(status_code=404, detail="Unknown concept")
-    if len(USED_QIDS[req.student_id]) >= len(QUESTION_BANK):
-        USED_QIDS[req.student_id].clear()
-
-    qs = build_quiz(
-        CONCEPTS,
-        student.all_masteries(),
-        list(QUESTION_BANK.values()),
-        used_ids=USED_QIDS[req.student_id],
-        size=req.size,
-        target_difficulty=req.difficulty,
-        target_concept=req.concept_id,
-    )
-    if not qs:
-        USED_QIDS[req.student_id].clear()
-        qs = build_quiz(
-            CONCEPTS,
-            student.all_masteries(),
-            list(QUESTION_BANK.values()),
-            used_ids=USED_QIDS[req.student_id],
-            size=req.size,
-            target_difficulty=req.difficulty,
-            target_concept=req.concept_id,
-        )
-    for q in qs:
-        USED_QIDS[req.student_id].add(q.q_id)
-    return {
-        "student_id": req.student_id,
-        "questions": [q_to_dict(q, include_answer=False) for q in qs],
-    }
+    """Issue durable attempts using observed mastery and the eligible unique pool."""
+    with STUDENT_LOCK:
+        student = get_student(req.student_id)
+        if req.concept_id and req.concept_id not in CONCEPTS_BY_ID:
+            raise HTTPException(status_code=404, detail="Unknown concept")
+        old_used = set(USED_QIDS[req.student_id])
+        qs = build_quiz(CONCEPTS, student.all_masteries(), list(QUESTION_BANK.values()),
+                        used_ids=old_used, size=req.size, target_difficulty=req.difficulty,
+                        target_concept=req.concept_id)
+        if not qs:
+            # A deliberate new practice cycle, with a new attempt per item.
+            cycle = build_quiz(CONCEPTS, student.all_masteries(), list(QUESTION_BANK.values()),
+                               size=len(QUESTION_BANK), target_difficulty=req.difficulty,
+                               target_concept=req.concept_id)
+            USED_QIDS[req.student_id].difference_update(q.q_id for q in cycle)
+            qs = cycle[:req.size]
+        try:
+            items = _issue_questions(req.student_id, qs)
+        except HTTPException:
+            USED_QIDS[req.student_id] = old_used
+            raise
+        return {"student_id": req.student_id, "questions": items}
 
 
 @app.post("/answer", tags=["Assessment"])
 def submit_answer(req: AnswerRequest):
-    """
-    Grades an answer, performs BKT update with slip/guess weighting,
-    and walks the prerequisite DAG backward if remediation is needed.
-    """
-    student = get_student(req.student_id)
+    """Grade each issued attempt once, atomically with persistent learner progress."""
+    if not req.answer.strip():
+        raise HTTPException(status_code=422, detail="An answer is required.")
     q = QUESTION_BANK.get(req.q_id)
     if q is None:
         raise HTTPException(status_code=404, detail=f"unknown question {req.q_id}")
-
-    correct = answers_match(req.answer, q.answer, q.type)
-    concept_id = get_question_concept_id(q)
     with STUDENT_LOCK:
+        student = get_student(req.student_id)
+        concept_id = get_question_concept_id(q)
         previous_mastery = student.mastery(concept_id)
-        new_mastery = student.observe(concept_id, correct)
-        SESSIONS[req.student_id].append((q, req.answer, correct))
+        history_length = len(SESSIONS[req.student_id])
         try:
-            _save_student(req.student_id)
+            with closing(_get_session_db()) as conn, conn:
+                if req.attempt_id:
+                    attempt = conn.execute("SELECT * FROM assessment_attempts WHERE attempt_id=? "
+                                           "AND student_id=? AND q_id=?",
+                                           (req.attempt_id, req.student_id, req.q_id)).fetchone()
+                else:
+                    # Legacy clients are supported only when the issuance is unambiguous.
+                    rows = conn.execute("SELECT * FROM assessment_attempts WHERE student_id=? AND q_id=?",
+                                        (req.student_id, req.q_id)).fetchall()
+                    if len(rows) > 1:
+                        raise HTTPException(status_code=409, detail="Send the attempt_id returned with this question.")
+                    attempt = rows[0] if rows else None
+                if attempt is None:
+                    raise HTTPException(status_code=409, detail="Request this question through a quiz or diagnostic first.")
+                if attempt["response_json"] is not None:
+                    if attempt["answer"] != req.answer:
+                        raise HTTPException(status_code=409, detail="This attempt was already answered. Start new practice to try again.")
+                    return {**json_lib.loads(attempt["response_json"]), "replayed": True}
+                correct = answers_match(req.answer, q.answer, q.type)
+                learning_opportunity = attempt["mode"] == "practice"
+                new_mastery = student.observe(concept_id, correct, learning_opportunity=learning_opportunity)
+                SESSIONS[req.student_id].append((q, req.answer, correct))
+                nxt = select_next_concept(CONCEPTS, student.all_masteries())
+                result = {
+                    "correct": correct, "correct_answer": q.answer,
+                    "explanation": q.explanation or f"Compared with the bundled answer key for {q.topic}.",
+                    "concept_id": concept_id, "previous_mastery": round(previous_mastery, 4),
+                    "new_mastery": round(new_mastery, 4), "next_concept": nxt,
+                    "next_difficulty": choose_difficulty(student.mastery(nxt)),
+                    "attempt_id": attempt["attempt_id"], "replayed": False,
+                    "learning_opportunity": learning_opportunity,
+                    "mastery_reason": ("Practice answer: Bayesian evidence update plus the configured learning transition."
+                                       if learning_opportunity else "Diagnostic answer: Bayesian evidence update without a learning transition."),
+                }
+                _save_student(req.student_id, connection=conn)
+                conn.execute("UPDATE assessment_attempts SET answer=?, response_json=? WHERE attempt_id=?",
+                             (req.answer, json_lib.dumps(result), attempt["attempt_id"]))
+                conn.execute("INSERT INTO completed_quizzes (id, student_id, topic, score, total, completed_at) "
+                             "VALUES (?, ?, ?, ?, ?, ?)",
+                             (attempt["attempt_id"], req.student_id, q.topic, float(correct), 1,
+                              datetime.now(timezone.utc).isoformat()))
+            return result
         except (sqlite3.Error, OSError) as exc:
             student.concepts[concept_id].mastery = previous_mastery
-            SESSIONS[req.student_id].pop()
+            del SESSIONS[req.student_id][history_length:]
             raise HTTPException(status_code=503, detail="Learner progress could not be saved; please retry.") from exc
-
-    nxt = select_next_concept(CONCEPTS, student.all_masteries())
-    try:
-        conn = _get_session_db()
-        conn.execute(
-            "INSERT INTO completed_quizzes (id, student_id, topic, score, total, completed_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), req.student_id, q.topic, 1.0 if correct else 0.0, 1, datetime.now(timezone.utc).isoformat())
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        log.warning(f"Failed to persist completed quiz: {e}")
-
-    explanation_text = getattr(q, "explanation", None) or f"Compared with the bundled answer key for {q.topic}."
-    return {
-        "correct": correct,
-        "correct_answer": q.answer,
-        "explanation": explanation_text,
-        "concept_id": concept_id,
-        "new_mastery": round(new_mastery, 4),
-        "next_concept": nxt,
-        "next_difficulty": choose_difficulty(student.mastery(nxt)),
-    }
 
 
 @app.get("/mastery/{student_id}", tags=["Assessment"])
@@ -952,27 +1031,29 @@ def get_report(student_id: str):
 @app.post("/diagnostic", tags=["Assessment"])
 def run_diagnostic(student_id: str = "student_default"):
     """Prepare a diagnostic; mastery changes only when actual answers are submitted."""
-    student = get_student(student_id)
-    return {
-        "student_id": student_id,
-        "status": "diagnostic_ready",
-        "questions": [q_to_dict(q) for q in build_diagnostic(CONCEPTS, list(QUESTION_BANK.values()))],
-        "masteries": student.all_masteries(),
-    }
+    with STUDENT_LOCK:
+        student = get_student(student_id)
+        questions = build_diagnostic(CONCEPTS, list(QUESTION_BANK.values()))
+        return {
+            "student_id": student_id, "status": "diagnostic_ready",
+            "questions": _issue_questions(student_id, questions, mode="diagnostic"),
+            "masteries": student.all_masteries(),
+        }
 
 
 # --------------------------------------------------------------------------- #
 # 6. Evaluation & Benchmarking (Pod D)
 # --------------------------------------------------------------------------- #
 @app.get("/eval/ablation", tags=["Evaluation"])
-def get_ablation_benchmarks(students: int = Query(30, ge=1, le=500), sessions: int = Query(5, ge=1, le=50)):
+def get_ablation_benchmarks(students: int = Query(30, ge=1, le=500), sessions: int = Query(5, ge=1, le=50),
+                           seed: int = Query(42, ge=0, le=2**31 - 1)):
     """
     Returns empirical benchmark data comparing Adaptive Tutor vs. Random Selection.
     Simulates students over the active course concepts and question bank dynamically.
-    Direct proof for Track D Rubric (Personalization & System Evaluation).
+    Synthetic-policy diagnostic only; no real learner effectiveness claim.
     """
     sim = AblationSimulator(CONCEPTS, list(QUESTION_BANK.values()))
-    return sim.run_benchmark(num_students=students, sessions=sessions)
+    return sim.run_benchmark(num_students=students, sessions=sessions, seed=seed)
 
 
 @app.get("/eval/ragas", tags=["Evaluation"])
@@ -1144,6 +1225,7 @@ def get_session(session_id: str):
     for m in messages:
         d = dict(m)
         d["citations"] = json_lib.loads(d.pop("citations_json", "[]") or "[]")
+        d.update(json_lib.loads(d.pop("answer_meta_json", "{}") or "{}"))
         msgs.append(d)
     return {"session": dict(session), "messages": msgs}
 
@@ -1226,6 +1308,8 @@ def session_chat(session_id: str, req: SessionChatRequest):
                 "timestamp": f"@{int(s.location.t_start)}s" if s.location.t_start is not None else None,
             },
             "excerpt": s.excerpt,
+            "excerpt_start": s.excerpt_start,
+            "excerpt_end": s.excerpt_end,
             "diagram_caption": getattr(s, "image_caption", None),
         })
 
@@ -1241,8 +1325,12 @@ def session_chat(session_id: str, req: SessionChatRequest):
         (str(uuid.uuid4()), session_id, "user", req.question, "[]", now)
     )
     conn.execute(
-        "INSERT INTO chat_messages (id, session_id, role, content, citations_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (str(uuid.uuid4()), session_id, "assistant", display_text, json_lib.dumps(citations), now)
+        "INSERT INTO chat_messages (id, session_id, role, content, citations_json, created_at, answer_meta_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), session_id, "assistant", display_text, json_lib.dumps(citations), now,
+         json_lib.dumps({"status": ans.status.value, "confidence": ans.confidence,
+                         "confidence_kind": ans.confidence_kind, "verification": ans.verification,
+                         "verification_note": ans.message, "claims": [c.model_dump() for c in ans.claims],
+                         "outside_knowledge": ans.outside_knowledge}))
     )
 
     msg_count = conn.execute(
@@ -1268,6 +1356,9 @@ def session_chat(session_id: str, req: SessionChatRequest):
         "status": ans.status.value if hasattr(ans.status, "value") else str(ans.status),
         "text": display_text,
         "confidence": ans.confidence,
+        "confidence_kind": ans.confidence_kind,
+        "verification": ans.verification,
+        "verification_note": ans.message,
         "citations": citations,
         "claims": [c.model_dump() for c in ans.claims],
         "outside_knowledge": ans.outside_knowledge,

@@ -13,6 +13,14 @@ The idea in plain words:
 """
 
 from dataclasses import dataclass
+import math
+
+
+def _probability(value, name):
+    """Reject corrupted state rather than silently persisting NaN or a bad bound."""
+    if not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 1:
+        raise ValueError(f"{name} must be a finite probability in [0, 1].")
+    return float(value)
 
 
 @dataclass
@@ -22,6 +30,13 @@ class BKTParams:
     slip: float = 0.10    # P(wrong | learned): careless mistake
     learn: float = 0.15   # P(learn on this opportunity)
 
+    def __post_init__(self):
+        self.validate()
+
+    def validate(self):
+        for name in ("prior", "guess", "slip", "learn"):
+            _probability(getattr(self, name), name)
+
 
 class BKTConcept:
     """Tracks mastery for a single concept."""
@@ -29,11 +44,15 @@ class BKTConcept:
     def __init__(self, concept_id, params=None, mastery=None):
         self.concept_id = concept_id
         self.params = params or BKTParams()
-        self.mastery = self.params.prior if mastery is None else mastery
+        self.mastery = _probability(self.params.prior if mastery is None else mastery, "mastery")
 
     def update(self, correct: bool, learning_opportunity: bool = True) -> float:
         """Update mastery after one observation and return the new value."""
         p = self.params
+        p.validate()
+        _probability(self.mastery, "mastery")
+        if not isinstance(correct, bool) or not isinstance(learning_opportunity, bool):
+            raise ValueError("Observation and learning_opportunity must be booleans.")
         if correct:
             # Bayes: P(L | correct)
             num = self.mastery * (1 - p.slip)
@@ -54,6 +73,11 @@ class BKTConcept:
 
     def decay(self, days: float, half_life_days: float = 30.0) -> float:
         """Forgetting curve: mastery fades if not reviewed (Decision: half-life 30 days)."""
+        _probability(self.mastery, "mastery")
+        if not math.isfinite(days) or days < 0:
+            raise ValueError("days must be finite and nonnegative.")
+        if not math.isfinite(half_life_days) or half_life_days <= 0:
+            raise ValueError("half_life_days must be finite and positive.")
         factor = 0.5 ** (days / half_life_days)
         self.mastery *= factor
         return self.mastery
@@ -73,8 +97,9 @@ class LearnerModel:
     def all_masteries(self) -> dict:
         return {cid: c.mastery for cid, c in self.concepts.items()}
 
-    def observe(self, concept_id, correct: bool) -> float:
-        return self.concepts[concept_id].update(correct)
+    def observe(self, concept_id, correct: bool, learning_opportunity: bool = True) -> float:
+        """Fold in an answer; diagnostics measure knowledge without a learning step."""
+        return self.concepts[concept_id].update(correct, learning_opportunity=learning_opportunity)
 
     def apply_diagnostic(self, results: dict):
         """results: {concept_id: bool}. Set starting mastery from a short diagnostic."""

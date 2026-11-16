@@ -144,12 +144,16 @@ class Citation(BaseModel):
     label: str  # e.g. "Slide 14"
     excerpt: str
     open_url: str
+    excerpt_start: Optional[int] = None  # offsets into ContentUnit.searchable_text(), not PDF coordinates
+    excerpt_end: Optional[int] = None
 
 
 class Claim(BaseModel):
     text: str
     citations: list[Citation] = Field(default_factory=list)
     supported: bool = True  # False => must be rendered as outside knowledge
+    verification: Literal["none", "extractive", "lexical", "model_checked"] = "none"
+    quote_validated: bool = False  # exact source location only; does not imply entailment
 
 
 class AnswerResponse(BaseModel):
@@ -165,15 +169,24 @@ class AnswerResponse(BaseModel):
     mode: Optional[str] = None  # 'generative' | 'extractive' | 'refusal'
     retrieved: list[str] = Field(default_factory=list)  # unit_ids the generator saw (RAGAS 'contexts')
     standalone_question: Optional[str] = None  # follow-up rewritten to stand alone (== question if not needed)
+    verification: Literal["none", "extractive", "lexical", "model_checked"] = "none"
+    confidence_kind: Literal["none", "retrieval_score", "accepted_claim_fraction"] = "none"
 
 
 def make_citation(unit: ContentUnit, excerpt: Optional[str] = None) -> Citation:
     """Build a Citation from a unit so label/open_url can never drift from location."""
+    source = unit.searchable_text()
+    quoted = excerpt if excerpt is not None else unit.text[:300]
+    start = source.find(quoted)
+    if start < 0 or not quoted:
+        raise ValueError("citation excerpt must be a nonempty verbatim source span")
     return Citation(
         unit_id=unit.unit_id,
         source_id=unit.source_id,
         location=unit.location,
         label=unit.location.label(),
-        excerpt=(excerpt or unit.text)[:300],
+        excerpt=quoted,
         open_url=unit.location.open_url(unit.source_id),
+        excerpt_start=start,
+        excerpt_end=start + len(quoted),
     )
